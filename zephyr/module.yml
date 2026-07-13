@@ -1,0 +1,4 @@
+name: libiec61850
+build:
+  cmake: ./zephyr
+  kconfig: ./zephyr/Kconfig

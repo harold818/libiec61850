@@ -1,0 +1,57 @@
+config ZEPHYR_IEC61850_MODULE
+	bool
+
+menuconfig IEC61850
+	bool "libiec61850 Support"
+    select POSIX_API
+    select NETWORKING
+	help
+	  This option enables the IEC61850 library
+
+if IEC61850
+
+config MMS_MAXIMUM_PDU_SIZE 
+    int "Configure the maximum size of an MMS PDU (default 65000)"
+    default 65000
+
+config MAXIMUM_TCP_CLIENT_CONNECTIONS
+    int "Configure the maximum number of concurrent TCP client connections (default -1 for no limit)"
+    default 5
+
+config MMS_SERVER_MAX_GET_FILE_TASKS
+    int "Configure the maximum number of concurrent get file tasks (default 5)"
+    default 1
+
+config MMS_MAX_NUMBER_OF_DATA_SET_MEMBERS
+    int "Configure the maximum number of data set members (default 100)"
+    default 100
+
+config REPORTING_DEFAULT_REPORT_BUFFER_SIZE
+    int "Configure the default buffer size of buffered RCBs in bytes (default 65536)"
+    default 65536
+
+config IEC61850_CONTROL_SERVICE
+    bool "Enable IEC 61850 control service"
+    default y
+
+config IEC61850_REPORT_SERVICE
+    bool "Enable IEC 61850 reporting service"
+    default y
+
+config IEC61850_LOG_SERVICE
+    bool "Enable IEC 61850 logging service"
+    default y
+
+config IEC61850_SERVICE_TRACKING
+    bool "Enable IEC 61850 service tracking"
+    default y
+
+config IEC61850_SETTING_GROUPS
+    bool "Enable IEC 61850 setting groups"
+    default y
+
+config IEC61850_SUPPORT_USER_READ_ACCESS_CONTROL
+    bool "Enable user read access control callback"
+    default y
+
+endif
