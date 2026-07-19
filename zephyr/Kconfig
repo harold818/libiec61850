@@ -5,10 +5,15 @@ menuconfig IEC61850
 	bool "libiec61850 Support"
     select POSIX_API
     select NETWORKING
+    select NET_TCP
 	help
 	  This option enables the IEC61850 library
 
 if IEC61850
+
+module = IEC61850
+module-str = iec61850
+source "subsys/logging/Kconfig.template.log_config"
 
 config MMS_MAXIMUM_PDU_SIZE 
     int "Configure the maximum size of an MMS PDU (default 65000)"
@@ -53,5 +58,25 @@ config IEC61850_SETTING_GROUPS
 config IEC61850_SUPPORT_USER_READ_ACCESS_CONTROL
     bool "Enable user read access control callback"
     default y
+
+config MMS_THREADLESS_STACK
+    bool "Use threadless stack for MMS server"
+    default n
+
+config MMS_SINGLE_THREADED
+    bool "Use single threaded MMS server"
+    default n
+
+config MMS_STACK_SIZE
+    int "Size of MMS server stack in bytes (default: 1024)"
+    default 1024
+
+config MMS_THREAD_PRIORITY
+    int "Priority of MMS server thread (default: 5)"
+    default 5
+
+config IEC61850_HEAP_SIZE
+    int "Size of IEC 61850 heap in bytes (default: 1048576(1MB))"
+    default 1048576
 
 endif

@@ -7,27 +7,33 @@
  *  for libiec61850, libmms, and lib60870.
  */
 
+#include <zephyr/logging/log.h>
+
 #include "hal_socket.h"
-#include <zephyr/posix/arpa/inet.h>
-#include <errno.h>
-#include <zephyr/posix/fcntl.h>
-#include <zephyr/posix/netdb.h>
-#include <zephyr/posix/netinet/in.h>
-#include <zephyr/posix/netinet/tcp.h> /* required for TCP keepalive */
 #include <stdio.h>
 #include <string.h>
-#include <zephyr/posix/sys/select.h>
-#include <zephyr/posix/sys/socket.h>
+
+
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h> /* required for TCP keepalive */
+#include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/types.h>
-#include <zephyr/posix/unistd.h>
+#include <unistd.h>
 
 #define _GNU_SOURCE
-#include <zephyr/posix/poll.h>
-#include <zephyr/posix/posix_signal.h>
+#include <poll.h>
+#include <signal.h>
 
 #include "hal_thread.h"
 #include "lib_memory.h"
 #include "linked_list.h"
+
+LOG_MODULE_DECLARE(iec61850);
 
 #ifndef DEBUG_SOCKET
 #define DEBUG_SOCKET 0
@@ -145,7 +151,8 @@ Handleset_waitReady(HandleSet self, unsigned int timeoutMs)
                 if (sock)
                 {
                     self->fds[i].fd = sock->fd;
-                    self->fds[i].events = POLLIN;
+                    self->fds[i].events = POLLIN|POLLERR|POLLHUP|POLLNVAL;
+                    self->fds[i].revents = 0;
                 }
             }
         }
@@ -164,8 +171,7 @@ Handleset_waitReady(HandleSet self, unsigned int timeoutMs)
 
         if (result == -1)
         {
-            if (DEBUG_SOCKET)
-                printf("SOCKET: poll error (errno: %i)\n", errno);
+            LOG_ERR("SOCKET: poll error (errno: %i)", errno);
         }
 
         return result;
@@ -203,30 +209,26 @@ Socket_activateTcpKeepAlive(Socket self, int idleTime, int interval, int count)
 
     if (setsockopt(self->fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen))
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: Failed to enable TCP keepalive\n");
+        LOG_ERR("SOCKET: Failed to enable TCP keepalive");
     }
 
 #if defined TCP_KEEPCNT
     optval = idleTime;
     if (setsockopt(self->fd, IPPROTO_TCP, TCP_KEEPIDLE, &optval, optlen))
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: Failed to set TCP keepalive TCP_KEEPIDLE parameter\n");
+        LOG_ERR("SOCKET: Failed to set TCP keepalive TCP_KEEPIDLE parameter");
     }
 
     optval = interval;
     if (setsockopt(self->fd, IPPROTO_TCP, TCP_KEEPINTVL, &optval, optlen))
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: Failed to set TCP keepalive TCP_KEEPINTVL parameter\n");
+        LOG_ERR("SOCKET: Failed to set TCP keepalive TCP_KEEPINTVL parameter");
     }
 
     optval = count;
     if (setsockopt(self->fd, IPPROTO_TCP, TCP_KEEPCNT, &optval, optlen))
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: Failed to set TCP keepalive TCP_KEEPCNT parameter\n");
+        LOG_ERR("SOCKET: Failed to set TCP keepalive TCP_KEEPCNT parameter");
     }
 #endif /* TCP_KEEPCNT */
 
@@ -253,8 +255,7 @@ prepareAddress(const char* address, int port, struct sockaddr_in* sockaddr)
         if (result != 0)
         {
 
-            if (DEBUG_SOCKET)
-                printf("SOCKET: getaddrinfo failed (code=%i)\n", result);
+            LOG_ERR("SOCKET: getaddrinfo failed (code=%i)", result);
 
             retVal = false;
             goto exit_function;
@@ -335,8 +336,7 @@ ServerSocket_listen(ServerSocket self)
 {
     if (listen(self->fd, self->backLog) == -1)
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: listen failed (errno: %i)\n", errno);
+        LOG_ERR("SOCKET: listen failed (errno: %i)", errno);
     }
 }
 
@@ -367,14 +367,12 @@ ServerSocket_accept(ServerSocket self)
             /* out of memory */
             close(fd);
 
-            if (DEBUG_SOCKET)
-                printf("SOCKET: out of memory\n");
+            LOG_ERR("SOCKET: out of memory");
         }
     }
     else
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: accept failed (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: accept failed (errno=%i)", errno);
     }
 
     return conSocket;
@@ -392,24 +390,21 @@ closeAndShutdownSocket(int socketFd)
     if (socketFd != -1)
     {
 
-        if (DEBUG_SOCKET)
-            printf("SOCKET: call shutdown for %i!\n", socketFd);
+        LOG_ERR("SOCKET: call shutdown for %i!", socketFd);
 
         /* shutdown is required to unblock read or accept in another thread! */
         int result = shutdown(socketFd, SHUT_RDWR);
 
         if (result == -1)
         {
-            if (DEBUG_SOCKET)
-                printf("SOCKET: shutdown error: %i\n", errno);
+            LOG_ERR("SOCKET: shutdown error: %i", errno);
         }
 
         result = close(socketFd);
 
         if (result == -1)
         {
-            if (DEBUG_SOCKET)
-                printf("SOCKET: close error: %i\n", errno);
+            LOG_ERR("SOCKET: close error: %i", errno);
         }
     }
 }
@@ -450,14 +445,12 @@ TcpSocket_create()
             /* out of memory */
             close(sock);
 
-            if (DEBUG_SOCKET)
-                printf("SOCKET: out of memory\n");
+            LOG_ERR("SOCKET: out of memory");
         }
     }
     else
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to create socket (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: failed to create socket (errno=%i)", errno);
     }
 
     return self;
@@ -481,8 +474,7 @@ Socket_bind(Socket self, const char* srcAddress, int srcPort)
 
     if (result == -1)
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to bind TCP socket (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: failed to bind TCP socket (errno=%i)", errno);
 
         close(self->fd);
         self->fd = -1;
@@ -498,8 +490,7 @@ Socket_connectAsync(Socket self, const char* address, int port)
 {
     struct sockaddr_in serverAddress;
 
-    if (DEBUG_SOCKET)
-        printf("SOCKET: connect: %s:%i\n", address, port);
+    LOG_ERR("SOCKET: connect: %s:%i", address, port);
 
     if (!prepareAddress(address, port, &serverAddress))
         return false;
@@ -515,8 +506,7 @@ Socket_connectAsync(Socket self, const char* address, int port)
         {
             if (close(self->fd) == -1)
             {
-                if (DEBUG_SOCKET)
-                    printf("SOCKET: failed to close socket (errno: %i)\n", errno);
+                LOG_ERR("SOCKET: failed to close socket (errno: %i)", errno);
             }
 
             self->fd = -1;
@@ -671,8 +661,7 @@ Socket_getPeerAddressStatic(Socket self, char* peerAddressString)
 
     if (getpeername(self->fd, (struct sockaddr*)&addr, &addrLen) == -1)
     {
-        if (DEBUG_SOCKET)
-            printf("DEBUG_SOCKET: getpeername -> errno: %i\n", errno);
+        LOG_ERR("DEBUG_SOCKET: getpeername -> errno: %i", errno);
 
         return NULL;
     }
@@ -732,8 +721,7 @@ Socket_read(Socket self, uint8_t* buf, int size)
 
         default:
 
-            if (DEBUG_SOCKET)
-                printf("DEBUG_SOCKET: recv returned error (errno=%i)\n", error);
+            LOG_ERR("DEBUG_SOCKET: recv returned error (errno=%i)", error);
 
             return -1;
         }
@@ -759,8 +747,7 @@ Socket_write(Socket self, uint8_t* buf, int size)
         }
         else
         {
-            if (DEBUG_SOCKET)
-                printf("DEBUG_SOCKET: send returned error (errno=%i)\n", errno);
+            LOG_ERR("DEBUG_SOCKET: send returned error (errno=%i)", errno);
         }
     }
 
@@ -799,16 +786,14 @@ UdpSocket_createUsingNamespace(int namespace)
         }
         else
         {
-            if (DEBUG_SOCKET)
-                printf("SOCKET: failed to allocate memory\n");
+            LOG_ERR("SOCKET: failed to allocate memory");
 
             close(sock);
         }
     }
     else
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to create UDP socket (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: failed to create UDP socket (errno=%i)", errno);
     }
 
     return self;
@@ -835,7 +820,7 @@ UdpSocket_addGroupMembership(UdpSocket self, const char* multicastAddress)
 
         if (!inet_aton(multicastAddress, &(mreq.imr_multiaddr)))
         {
-            printf("SOCKET: Invalid IPv4 multicast address\n");
+            LOG_ERR("SOCKET: Invalid IPv4 multicast address");
             return false;
         }
         else
@@ -844,7 +829,7 @@ UdpSocket_addGroupMembership(UdpSocket self, const char* multicastAddress)
 
             if (setsockopt(self->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) == -1)
             {
-                printf("SOCKET: failed to set IPv4 multicast group (errno: %i)\n", errno);
+                LOG_ERR("SOCKET: failed to set IPv4 multicast group (errno: %i)", errno);
                 return false;
             }
         }
@@ -857,7 +842,7 @@ UdpSocket_addGroupMembership(UdpSocket self, const char* multicastAddress)
 
         if (inet_pton(AF_INET6, multicastAddress, &(mreq.ipv6mr_multiaddr)) < 1)
         {
-            printf("SOCKET: failed to set IPv6 multicast group (errno: %i)\n", errno);
+            LOG_ERR("SOCKET: failed to set IPv6 multicast group (errno: %i)", errno);
             return false;
         }
 
@@ -865,7 +850,7 @@ UdpSocket_addGroupMembership(UdpSocket self, const char* multicastAddress)
 
         if (setsockopt(self->fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) == -1)
         {
-            printf("SOCKET: failed to set IPv6 multicast group (errno: %i)\n", errno);
+            LOG_ERR("SOCKET: failed to set IPv6 multicast group (errno: %i)", errno);
             return false;
         }
 
@@ -882,7 +867,7 @@ UdpSocket_setMulticastTtl(UdpSocket self, int ttl)
     {
         if (setsockopt(self->fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) == -1)
         {
-            printf("SOCKET: failed to set IPv4 multicast TTL (errno: %i)\n", errno);
+            LOG_ERR("SOCKET: failed to set IPv4 multicast TTL (errno: %i)", errno);
             return false;
         }
 
@@ -892,7 +877,7 @@ UdpSocket_setMulticastTtl(UdpSocket self, int ttl)
     {
         if (setsockopt(self->fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &ttl, sizeof(ttl)) == -1)
         {
-            printf("SOCKET: failed to set IPv6 multicast TTL(hops) (errno: %i)\n", errno);
+            LOG_ERR("SOCKET: failed to set IPv6 multicast TTL(hops) (errno: %i)", errno);
             return false;
         }
 
@@ -919,8 +904,7 @@ UdpSocket_bind(UdpSocket self, const char* address, int port)
 
     if (result == -1)
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to bind UDP socket (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: failed to bind UDP socket (errno=%i)", errno);
 
         close(self->fd);
         self->fd = 0;
@@ -940,8 +924,7 @@ UdpSocket_sendTo(UdpSocket self, const char* address, int port, uint8_t* msg, in
     if (!prepareAddress(address, port, &remoteAddress))
     {
 
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to lookup remote address %s\n", address);
+        LOG_ERR("SOCKET: failed to lookup remote address %s", address);
 
         return false;
     }
@@ -954,13 +937,11 @@ UdpSocket_sendTo(UdpSocket self, const char* address, int port, uint8_t* msg, in
     }
     else if (result == -1)
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to send UDP message (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: failed to send UDP message (errno=%i)", errno);
     }
     else
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to send UDP message (insufficient data sent)\n");
+        LOG_ERR("SOCKET: failed to send UDP message (insufficient data sent)");
     }
 
     return false;
@@ -978,8 +959,7 @@ UdpSocket_receiveFrom(UdpSocket self, char* address, int maxAddrSize, uint8_t* m
 
     if (result == -1)
     {
-        if (DEBUG_SOCKET)
-            printf("SOCKET: failed to receive UDP message (errno=%i)\n", errno);
+        LOG_ERR("SOCKET: failed to receive UDP message (errno=%i)", errno);
     }
 
     if (address)
